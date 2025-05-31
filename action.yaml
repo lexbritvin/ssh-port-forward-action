@@ -286,3 +286,43 @@ runs:
         if [[ -z "$LOCAL_FORWARDS" && -z "$REMOTE_FORWARDS" ]]; then
           echo "ℹ SSH tunnel established (unable to test - no testable forwards)"
         fi
+
+    - name: Setup cleanup trap
+      shell: bash
+      run: |
+        # Create cleanup script
+        cat > ~/.ssh/cleanup_tunnel.sh << 'EOF'
+        #!/bin/bash
+        if [[ -n "$SSH_TUNNEL_PID" ]]; then
+          echo "Cleaning up SSH tunnel (PID: $SSH_TUNNEL_PID)..."
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            taskkill /PID $SSH_TUNNEL_PID /F 2>/dev/null || true
+          else
+            kill $SSH_TUNNEL_PID 2>/dev/null || true
+            sleep 2
+            kill -9 $SSH_TUNNEL_PID 2>/dev/null || true
+          fi
+          echo "SSH tunnel cleanup completed"
+        fi
+        
+        # Cleanup temporary SSH files
+        if [[ -f ~/.ssh/id_rsa_tunnel ]]; then
+          rm -f ~/.ssh/id_rsa_tunnel
+        fi
+        EOF
+        
+        chmod +x ~/.ssh/cleanup_tunnel.sh
+        
+        # Register cleanup for different shells
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          echo "trap '~/.ssh/cleanup_tunnel.sh' EXIT" >> ~/.bashrc
+        else
+          echo "trap '~/.ssh/cleanup_tunnel.sh' EXIT INT TERM" >> ~/.bashrc
+        fi
+
+    - name: Register post action
+      shell: bash
+      run: |
+        # Save cleanup info for post action
+        echo "SSH_TUNNEL_PID=$SSH_TUNNEL_PID" >> $GITHUB_ENV
+        echo "CLEANUP_SCRIPT_PATH=$HOME/.ssh/cleanup_tunnel.sh" >> $GITHUB_ENV
