@@ -223,6 +223,7 @@ runs:
         
         echo "Executing SSH command with forwards:$FORWARD_DESCRIPTION"
         echo "ssh [auth] [jump_hosts]$FORWARD_DESCRIPTION -p ${{ inputs.port }} ${{ inputs.username }}@${{ inputs.host }} -N -f"
+        echo "$SSH_CMD"
         
         # Execute SSH command
         eval "$SSH_CMD"
