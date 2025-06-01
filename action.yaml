@@ -235,10 +235,10 @@ runs:
             Get-WmiObject Win32_Process |
               Where-Object { \$_.Name -eq 'ssh.exe' -and \$_.CommandLine -like '*runner@gh-linux-sidecar-15377444825-sidecar*' } |
               Select-Object -First 1 -ExpandProperty ProcessId
-          ")
+          " || true)
         else
           echo "Getting ssh tunnel process id on unix"
-          PID=$(ps aux | grep "ssh.*${{ inputs.username }}@${{ inputs.host }}" | grep -v grep | awk '{print $2}' | head -1)
+          PID=$(ps aux | grep "ssh.*${{ inputs.username }}@${{ inputs.host }}" | grep -v grep | awk '{print $2}' | head -1 || true)
         fi
         
         if [[ -z "$PID" ]]; then
