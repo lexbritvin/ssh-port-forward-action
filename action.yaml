@@ -233,7 +233,7 @@ runs:
           echo "Getting ssh tunnel process id on Windows"
           PID=$(pwsh -Command "
             Get-WmiObject Win32_Process |
-              Where-Object { \$_.Name -eq 'ssh.exe' -and \$_.CommandLine -like '*runner@gh-linux-sidecar-15377444825-sidecar*' } |
+              Where-Object { \$_.Name -eq 'ssh.exe' -and \$_.CommandLine -like '*${{ inputs.username }}@${{ inputs.host }}*' } |
               Select-Object -First 1 -ExpandProperty ProcessId
           " || true)
         else
