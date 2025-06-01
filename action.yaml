@@ -129,9 +129,9 @@ runs:
       if: inputs.private_key != ''
       shell: bash
       run: |
-        echo "${{ inputs.private_key }}" > ~/.ssh/id_rsa_tunnel
-        chmod 600 ~/.ssh/id_rsa_tunnel
-        echo "SSH_KEY_PATH=~/.ssh/id_rsa_tunnel" >> $GITHUB_ENV
+        echo "${{ inputs.private_key }}" > ~/.ssh/id_tun_key
+        chmod 600 ~/.ssh/id_tun_key
+        echo "SSH_KEY_PATH=~/.ssh/id_tun_key" >> $GITHUB_ENV
 
     - name: Use existing private key
       if: inputs.private_key_path != ''
@@ -222,7 +222,6 @@ runs:
         SSH_CMD="$SSH_CMD -N -f"
         
         echo "Executing SSH command with forwards:$FORWARD_DESCRIPTION"
-        echo "ssh [auth] [jump_hosts]$FORWARD_DESCRIPTION -p ${{ inputs.port }} ${{ inputs.username }}@${{ inputs.host }} -N -f"
         echo "$SSH_CMD"
         
         # Execute SSH command
@@ -231,8 +230,11 @@ runs:
         # Find the SSH process PID
         sleep 2
         if [[ "$RUNNER_OS" == "Windows" ]]; then
-          # On Windows, use wmic to find the process
-          PID=$(wmic process where "name='ssh.exe' and commandline like '%${{ inputs.username }}@${{ inputs.host }}%'" get processid /value | grep -o '[0-9]*' | head -1)
+          PID=$(pwsh -Command "
+            Get-WmiObject Win32_Process |
+              Where-Object { \$_.Name -eq 'ssh.exe' -and \$_.CommandLine -like '*runner@gh-linux-sidecar-15377444825-sidecar*' } |
+              Select-Object -First 1 -ExpandProperty ProcessId
+          ")
         else
           # On Unix-like systems
           PID=$(ps aux | grep "ssh.*${{ inputs.username }}@${{ inputs.host }}" | grep -v grep | awk '{print $2}' | head -1)
@@ -250,46 +252,11 @@ runs:
         echo "tunnel_pid=$PID" >> $GITHUB_OUTPUT
         echo "local_forwards=$LOCAL_FORWARDS" >> $GITHUB_OUTPUT
         echo "remote_forwards=$REMOTE_FORWARDS" >> $GITHUB_OUTPUT
-        echo "SSH_TUNNEL_PID=$PID" >> $GITHUB_ENV
-        
-        # Test the tunnels
-        echo "Testing tunnel connections..."
-        sleep 3
-        
-        # Test local forwards
-        if [[ -n "$LOCAL_FORWARDS" ]]; then
-          IFS=',' read -ra FORWARDS <<< "$LOCAL_FORWARDS"
-          for forward in "${FORWARDS[@]}"; do
-            # Extract local port from forward string
-            if [[ "$forward" =~ ^([^:]+:)?([0-9]+): ]]; then
-              LOCAL_PORT="${BASH_REMATCH[2]}"
-              echo "Testing local forward on port $LOCAL_PORT..."
-        
-              if command -v nc >/dev/null 2>&1; then
-                if nc -z localhost $LOCAL_PORT; then
-                  echo "✓ Local forward on port $LOCAL_PORT is active"
-                else
-                  echo "⚠ Warning: Local forward on port $LOCAL_PORT may not be ready yet"
-                fi
-              elif command -v telnet >/dev/null 2>&1; then
-                timeout 5 telnet localhost $LOCAL_PORT </dev/null && echo "✓ Local forward on port $LOCAL_PORT is active" || echo "⚠ Warning: Local forward on port $LOCAL_PORT may not be ready yet"
-              fi
-            fi
-          done
-        fi
-        
-        if [[ -n "$REMOTE_FORWARDS" ]]; then
-          echo "✓ Remote forwards configured: $REMOTE_FORWARDS"
-          echo "ℹ Remote forwards cannot be tested locally"
-        fi
-        
-        if [[ -z "$LOCAL_FORWARDS" && -z "$REMOTE_FORWARDS" ]]; then
-          echo "ℹ SSH tunnel established (unable to test - no testable forwards)"
-        fi
 
     - name: Setup cleanup trap
       shell: bash
       run: |
+        SSH_TUNNEL_PID="${{ steps.setup-tunnel.outputs.tunnel_pid }}"
         # Create cleanup script
         cat > ~/.ssh/cleanup_tunnel.sh << 'EOF'
         #!/bin/bash
@@ -306,8 +273,8 @@ runs:
         fi
         
         # Cleanup temporary SSH files
-        if [[ -f ~/.ssh/id_rsa_tunnel ]]; then
-          rm -f ~/.ssh/id_rsa_tunnel
+        if [[ -f ~/.ssh/id_tun_key ]]; then
+          rm -f ~/.ssh/id_tun_key
         fi
         EOF
         
