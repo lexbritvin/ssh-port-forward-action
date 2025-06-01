@@ -12,7 +12,7 @@ inputs:
   port:
     description: 'SSH port (default: 22)'
     required: false
-    default: '22'
+    default: ''
   username:
     description: 'SSH username (optional - will use current user or SSH config if not specified)'
     required: false
@@ -210,6 +210,11 @@ runs:
           REMOTE_FORWARDS="${REMOTE_FORWARDS%,}" # remove trailing comma
         fi
         
+        # Set a different port if requested
+        if [[ -n "${{ inputs.port }}" ]]; then
+          SSH_CMD="$SSH_CMD -p ${{ inputs.port }}"
+        fi
+        
         # Build the SSH target (host with optional username)
         SSH_TARGET="${{ inputs.host }}"
         if [[ -n "${{ inputs.username }}" ]]; then
@@ -217,7 +222,7 @@ runs:
         fi
         
         # Add connection details
-        SSH_CMD="$SSH_CMD -p ${{ inputs.port }} $SSH_TARGET"
+        SSH_CMD="$SSH_CMD $SSH_TARGET"
         
         # Add options to run in background and not execute commands
         SSH_CMD="$SSH_CMD -N -f"
