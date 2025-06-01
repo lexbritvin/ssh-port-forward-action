@@ -14,8 +14,8 @@ inputs:
     required: false
     default: '22'
   username:
-    description: 'SSH username'
-    required: true
+    description: 'SSH username (optional - will use current user or SSH config if not specified)'
+    required: false
   private_key:
     description: 'SSH private key content'
     required: false
@@ -40,7 +40,7 @@ inputs:
   ssh_flags:
     description: 'Additional SSH flags'
     required: false
-    default: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+    default: ''
   timeout:
     description: 'Connection timeout in seconds (default: 30)'
     required: false
@@ -67,11 +67,6 @@ runs:
     - name: Validate inputs
       shell: bash
       run: |
-        if [[ -z "${{ inputs.private_key }}" && -z "${{ inputs.private_key_path }}" && -z "${{ inputs.password }}" ]]; then
-          echo "Error: Must provide either private_key, private_key_path, or password"
-          exit 1
-        fi
-        
         if [[ -n "${{ inputs.private_key }}" && -n "${{ inputs.private_key_path }}" ]]; then
           echo "Error: Cannot specify both private_key and private_key_path"
           exit 1
@@ -215,8 +210,14 @@ runs:
           REMOTE_FORWARDS="${REMOTE_FORWARDS%,}" # remove trailing comma
         fi
         
+        # Build the SSH target (host with optional username)
+        SSH_TARGET="${{ inputs.host }}"
+        if [[ -n "${{ inputs.username }}" ]]; then
+          SSH_TARGET="${{ inputs.username }}@$SSH_TARGET"
+        fi
+        
         # Add connection details
-        SSH_CMD="$SSH_CMD -p ${{ inputs.port }} ${{ inputs.username }}@${{ inputs.host }}"
+        SSH_CMD="$SSH_CMD -p ${{ inputs.port }} $SSH_TARGET"
         
         # Add options to run in background and not execute commands
         SSH_CMD="$SSH_CMD -N -f"
@@ -233,12 +234,12 @@ runs:
           echo "Getting ssh tunnel process id on Windows"
           PID=$(pwsh -Command "
             Get-WmiObject Win32_Process |
-              Where-Object { \$_.Name -eq 'ssh.exe' -and \$_.CommandLine -like '*${{ inputs.username }}@${{ inputs.host }}*' } |
+              Where-Object { \$_.Name -eq 'ssh.exe' -and \$_.CommandLine -like '*$SSH_TARGET*' } |
               Select-Object -First 1 -ExpandProperty ProcessId
           " || true)
         else
           echo "Getting ssh tunnel process id on unix"
-          PID=$(ps aux | grep "ssh.*${{ inputs.username }}@${{ inputs.host }}" | grep -v grep | awk '{print $2}' | head -1 || true)
+          PID=$(ps aux | grep "ssh.*$SSH_TARGET" | grep -v grep | awk '{print $2}' | head -1 || true)
         fi
         
         if [[ -z "$PID" ]]; then
