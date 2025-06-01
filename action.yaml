@@ -230,13 +230,14 @@ runs:
         # Find the SSH process PID
         sleep 2
         if [[ "$RUNNER_OS" == "Windows" ]]; then
+          echo "Getting ssh tunnel process id on Windows"
           PID=$(pwsh -Command "
             Get-WmiObject Win32_Process |
               Where-Object { \$_.Name -eq 'ssh.exe' -and \$_.CommandLine -like '*runner@gh-linux-sidecar-15377444825-sidecar*' } |
               Select-Object -First 1 -ExpandProperty ProcessId
           ")
         else
-          # On Unix-like systems
+          echo "Getting ssh tunnel process id on unix"
           PID=$(ps aux | grep "ssh.*${{ inputs.username }}@${{ inputs.host }}" | grep -v grep | awk '{print $2}' | head -1)
         fi
         
