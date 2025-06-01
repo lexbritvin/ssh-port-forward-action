@@ -228,7 +228,7 @@ runs:
         eval "$SSH_CMD"
         
         # Find the SSH process PID
-        sleep 2
+        sleep 5
         if [[ "$RUNNER_OS" == "Windows" ]]; then
           echo "Getting ssh tunnel process id on Windows"
           PID=$(pwsh -Command "
