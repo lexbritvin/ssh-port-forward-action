@@ -225,7 +225,7 @@ runs:
         SSH_CMD="$SSH_CMD $SSH_TARGET"
         
         # Add options to run in background and not execute commands
-        SSH_CMD="$SSH_CMD -N -f"
+        SSH_CMD="$SSH_CMD -T -N -f"
         
         echo "Executing SSH command with forwards:$FORWARD_DESCRIPTION"
         echo "$SSH_CMD"
