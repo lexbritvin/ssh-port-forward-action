@@ -111,7 +111,7 @@ runs:
       id: known_hosts
       run: |
         if [[ "$RUNNER_OS" == "Windows" ]]; then
-          KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts
+          KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts"
         else
           KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts_$RANDOM"
         fi
