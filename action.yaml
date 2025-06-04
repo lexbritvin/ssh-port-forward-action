@@ -154,7 +154,7 @@ runs:
         if [[ -n "${{ inputs.password }}" ]]; then
           SSH_CMD="sshpass -p '${{ inputs.password }}' $SSH_CMD"
         elif [[ -n "${{ inputs.private_key_path }}" ]]; then
-          SSH_CMD="$SSH_CMD -i "${{ inputs.private_key_path }}"
+          SSH_CMD="$SSH_CMD -i '${{ inputs.private_key_path }}'"
         fi
         
         # Add jump hosts if specified
@@ -207,9 +207,9 @@ runs:
         
         # Execute command
         if [[ -n "${{ inputs.command }}" ]]; then
-          SSH_CMD="$SSH_CMD -T \"${{ inputs.command }}\""
-        else
+          SSH_CMD="$SSH_CMD -T '${{ inputs.command }}'"
         # Add options to run in background and not execute commands
+        else
           SSH_CMD="$SSH_CMD -T -N -f"
         fi
         
