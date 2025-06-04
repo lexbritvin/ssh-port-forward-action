@@ -113,6 +113,10 @@ runs:
         KNOWN_HOSTS_FILE="$HOME/known_hosts_$RANDOM"
         echo "${{ inputs.known_hosts }}" >> $KNOWN_HOSTS_FILE
         chmod 600 $KNOWN_HOSTS_FILE
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          # Convert Unix path to Windows path format for Git Bash/MSYS2
+          KNOWN_HOSTS_FILE=$(cygpath -w "$KNOWN_HOSTS_FILE" 2>/dev/null || echo "$KNOWN_HOSTS_FILE")
+        fi
         echo "known_hosts_file=$KNOWN_HOSTS_FILE" >> $GITHUB_OUTPUT
 
     - name: Install sshpass (for password auth)
