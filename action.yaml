@@ -68,13 +68,26 @@ runs:
     - name: Validate inputs
       shell: bash
       run: |
-        # Check if we have port forwarding configuration
+        # Check if we have either port forwarding configuration OR command (but not both)
+        if [[ -n "${{ inputs.command }}" ]]; then
+          if [[ -n "${{ inputs.local_forwards }}" || -n "${{ inputs.remote_forwards }}" ]]; then
+            echo "Error: Cannot specify both 'command' and port forwarding options (local_forwards/remote_forwards)"
+            echo "Use either:"
+            echo "  - 'command' for executing a command on the remote host"
+            echo "  - 'local_forwards' and/or 'remote_forwards' for port forwarding"
+            exit 1
+          fi
+          echo "Command mode: will execute '${{ inputs.command }}' on remote host"
+          exit 0
+        fi
+        
+        # Port forwarding mode - require at least one forwarding option
         if [[ -z "${{ inputs.local_forwards }}" && -z "${{ inputs.remote_forwards }}" ]]; then
-          echo "Error: Must specify either local_forwards or remote_forwards (or both)"
+          echo "Error: Must specify either local_forwards or remote_forwards (or both) when not using command mode"
           exit 1
         fi
         
-        # Validate forward format
+        # Validate local_forwards format
         if [[ -n "${{ inputs.local_forwards }}" ]]; then
           IFS=',' read -ra FORWARDS <<< "${{ inputs.local_forwards }}"
           for forward in "${FORWARDS[@]}"; do
@@ -87,6 +100,7 @@ runs:
           done
         fi
         
+        # Validate remote_forwards format
         if [[ -n "${{ inputs.remote_forwards }}" ]]; then
           IFS=',' read -ra FORWARDS <<< "${{ inputs.remote_forwards }}"
           for forward in "${FORWARDS[@]}"; do
