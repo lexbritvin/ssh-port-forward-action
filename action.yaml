@@ -124,11 +124,7 @@ runs:
       shell: bash
       id: known_hosts
       run: |
-        if [[ "$RUNNER_OS" == "Windows" ]]; then
-          KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts"
-        else
-          KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts_$RANDOM"
-        fi
+        KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts2"
         
         echo "${{ inputs.known_hosts }}" >> $KNOWN_HOSTS_FILE
         chmod 600 $KNOWN_HOSTS_FILE
