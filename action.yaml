@@ -234,7 +234,7 @@ runs:
         fi
 
         # Output variable
-        echo 'ssh=$SSH_CMD' >> $GITHUB_OUTPUT
+        echo "ssh=$SSH_CMD" >> $GITHUB_OUTPUT
         echo "$SSH_CMD"
 
     - name: Run SSH command
