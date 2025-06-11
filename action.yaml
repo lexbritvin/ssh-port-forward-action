@@ -16,25 +16,25 @@ inputs:
   username:
     description: 'SSH username (optional - will use current user or SSH config if not specified)'
     required: false
-  private_key_path:
+  private-key-path:
     description: 'Path to SSH private key file'
     required: false
   password:
     description: 'SSH password (not recommended, use private key instead)'
     required: false
-  known_hosts:
+  known-hosts:
     description: 'SSH known_hosts content'
     required: false
-  local_forwards:
+  local-forwards:
     description: 'Local port forwards (-L). Format: "local_port:remote_host:remote_port" or "local_host:local_port:remote_host:remote_port". Multiple forwards separated by comma'
     required: false
-  remote_forwards:
+  remote-forwards:
     description: 'Remote port forwards (-R). Format: "remote_port:local_host:local_port" or "remote_host:remote_port:local_host:local_port". Multiple forwards separated by comma'
     required: false
-  jump_hosts:
+  jump-hosts:
     description: 'Comma-separated list of jump hosts (format: user@host:port)'
     required: false
-  ssh_flags:
+  extra-flags:
     description: 'Additional SSH flags'
     required: false
     default: ''
@@ -42,7 +42,7 @@ inputs:
     description: 'Command to execute on the remote SSH host (alternative to port forwarding)'
     required: false
     default: ''
-  post_command:
+  post-command:
     description: 'Command to execute on the remote host after the workflow completes'
     required: false
     default: ''
@@ -50,11 +50,11 @@ inputs:
     description: 'Connection timeout in seconds (default: 30)'
     required: false
     default: '30'
-  keep_alive:
+  keep-alive:
     description: 'Send keep-alive packets every N seconds (default: 60)'
     required: false
     default: '60'
-  dry_run:
+  dry-run:
     description: 'Only show the SSH command that would be executed without running it'
     required: false
     default: 'false'
@@ -62,10 +62,10 @@ inputs:
 outputs:
   command:
     description: 'The full SSH command that was executed'
-    value: ${{ steps.setup-tunnel.outputs.command }}
-  tunnel_pid:
+    value: ${{ steps.cmd.outputs.ssh }}
+  pid:
     description: 'Process ID of the SSH tunnel'
-    value: ${{ steps.setup-tunnel.outputs.tunnel_pid }}
+    value: ${{ steps.ssh.outputs.pid }}
 
 runs:
   using: 'composite'
@@ -75,11 +75,11 @@ runs:
       run: |
         # Check if we have either port forwarding configuration OR command (but not both)
         if [[ -n "${{ inputs.command }}" ]]; then
-          if [[ -n "${{ inputs.local_forwards }}" || -n "${{ inputs.remote_forwards }}" ]]; then
-            echo "Error: Cannot specify both 'command' and port forwarding options (local_forwards/remote_forwards)"
+          if [[ -n "${{ inputs.local-forwards }}" || -n "${{ inputs.remote-forwards }}" ]]; then
+            echo "Error: Cannot specify both 'command' and port forwarding options (local-forwards/remote-forwards)"
             echo "Use either:"
             echo "  - 'command' for executing a command on the remote host"
-            echo "  - 'local_forwards' and/or 'remote_forwards' for port forwarding"
+            echo "  - 'local-forwards' and/or 'remote-forwards' for port forwarding"
             exit 1
           fi
           echo "Command mode: will execute '${{ inputs.command }}' on remote host"
@@ -87,31 +87,31 @@ runs:
         fi
         
         # Port forwarding mode - require at least one forwarding option
-        if [[ -z "${{ inputs.local_forwards }}" && -z "${{ inputs.remote_forwards }}" ]]; then
-          echo "Error: Must specify either local_forwards or remote_forwards (or both) when not using command mode"
+        if [[ -z "${{ inputs.local-forwards }}" && -z "${{ inputs.remote-forwards }}" ]]; then
+          echo "Error: Must specify either local-forwards or remote-forwards (or both) when not using command mode"
           exit 1
         fi
         
-        # Validate local_forwards format
-        if [[ -n "${{ inputs.local_forwards }}" ]]; then
-          IFS=',' read -ra FORWARDS <<< "${{ inputs.local_forwards }}"
+        # Validate local-forwards format
+        if [[ -n "${{ inputs.local-forwards }}" ]]; then
+          IFS=',' read -ra FORWARDS <<< "${{ inputs.local-forwards }}"
           for forward in "${FORWARDS[@]}"; do
             forward=$(echo "$forward" | xargs) # trim whitespace
             if [[ ! "$forward" =~ ^([^:]+:)?[0-9]+:[^:]+:[0-9]+$ ]]; then
-              echo "Error: Invalid local_forwards format: '$forward'"
+              echo "Error: Invalid local-forwards format: '$forward'"
               echo "Expected format: '[local_host:]local_port:remote_host:remote_port'"
               exit 1
             fi
           done
         fi
         
-        # Validate remote_forwards format
-        if [[ -n "${{ inputs.remote_forwards }}" ]]; then
-          IFS=',' read -ra FORWARDS <<< "${{ inputs.remote_forwards }}"
+        # Validate remote-forwards format
+        if [[ -n "${{ inputs.remote-forwards }}" ]]; then
+          IFS=',' read -ra FORWARDS <<< "${{ inputs.remote-forwards }}"
           for forward in "${FORWARDS[@]}"; do
             forward=$(echo "$forward" | xargs) # trim whitespace
             if [[ ! "$forward" =~ ^([^:]+:)?[0-9]+:[^:]+:[0-9]+$ ]]; then
-              echo "Error: Invalid remote_forwards format: '$forward'"
+              echo "Error: Invalid remote-forwards format: '$forward'"
               echo "Expected format: '[remote_host:]remote_port:local_host:local_port'"
               exit 1
             fi
@@ -125,16 +125,16 @@ runs:
         chmod 700 ~/.ssh
 
     - name: Setup known hosts
-      if: inputs.known_hosts != ''
+      if: inputs.known-hosts != ''
       shell: bash
-      id: known_hosts
+      id: known-hosts
       run: |
         KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts2"
         
-        echo "${{ inputs.known_hosts }}" >> $KNOWN_HOSTS_FILE
+        echo "${{ inputs.known-hosts }}" >> $KNOWN_HOSTS_FILE
         chmod 600 $KNOWN_HOSTS_FILE
 
-        echo "known_hosts_file=$KNOWN_HOSTS_FILE" >> $GITHUB_OUTPUT
+        echo "file=$KNOWN_HOSTS_FILE" >> $GITHUB_OUTPUT
 
     - name: Install sshpass (for password auth)
       if: inputs.password != '' && runner.os == 'Linux'
@@ -149,39 +149,37 @@ runs:
       run: |
         brew install sshpass
 
-    - name: Setup SSH tunnel
-      id: setup-tunnel
+    - name: Prepare SSH command
+      id: cmd
       shell: bash
       run: |
-        set -e
-        
         # Build SSH command
         SSH_CMD="ssh"
-        if [[ -n "${{ steps.known_hosts.outputs.known_hosts_file }}" ]]; then
-          SSH_CMD="$SSH_CMD -o UserKnownHostsFile='${{ steps.known_hosts.outputs.known_hosts_file }}'"
+        if [[ -n "${{ steps.known-hosts.outputs.file }}" ]]; then
+          SSH_CMD="$SSH_CMD -o UserKnownHostsFile='${{ steps.known-hosts.outputs.file }}'"
         fi
         
         # Add timeout and keep-alive options
         SSH_CMD="$SSH_CMD -o ConnectTimeout=${{ inputs.timeout }}"
-        SSH_CMD="$SSH_CMD -o ServerAliveInterval=${{ inputs.keep_alive }}"
+        SSH_CMD="$SSH_CMD -o ServerAliveInterval=${{ inputs.keep-alive }}"
         SSH_CMD="$SSH_CMD -o ServerAliveCountMax=3"
         SSH_CMD="$SSH_CMD -T"
         
         # Add custom SSH flags
-        if [[ -n "${{ inputs.ssh_flags }}" ]]; then
-          SSH_CMD="$SSH_CMD ${{ inputs.ssh_flags }}"
+        if [[ -n "${{ inputs.extra-flags }}" ]]; then
+          SSH_CMD="$SSH_CMD ${{ inputs.extra-flags }}"
         fi
         
         # Add authentication
         if [[ -n "${{ inputs.password }}" ]]; then
           SSH_CMD="sshpass -p '${{ inputs.password }}' $SSH_CMD"
-        elif [[ -n "${{ inputs.private_key_path }}" ]]; then
-          SSH_CMD="$SSH_CMD -i '${{ inputs.private_key_path }}'"
+        elif [[ -n "${{ inputs.private-key-path }}" ]]; then
+          SSH_CMD="$SSH_CMD -i '${{ inputs.private-key-path }}'"
         fi
         
         # Add jump hosts if specified
-        if [[ -n "${{ inputs.jump_hosts }}" ]]; then
-          JUMP_HOSTS=$(echo "${{ inputs.jump_hosts }}" | tr ',' ' ')
+        if [[ -n "${{ inputs.jump-hosts }}" ]]; then
+          JUMP_HOSTS=$(echo "${{ inputs.jump-hosts }}" | tr ',' ' ')
           for jump_host in $JUMP_HOSTS; do
             SSH_CMD="$SSH_CMD -J $jump_host"
           done
@@ -191,9 +189,9 @@ runs:
         LOCAL_FORWARDS=""
         REMOTE_FORWARDS=""
         
-        # Handle local_forwards format
-        if [[ -n "${{ inputs.local_forwards }}" ]]; then
-          IFS=',' read -ra FORWARDS <<< "${{ inputs.local_forwards }}"
+        # Handle local-forwards format
+        if [[ -n "${{ inputs.local-forwards }}" ]]; then
+          IFS=',' read -ra FORWARDS <<< "${{ inputs.local-forwards }}"
           for forward in "${FORWARDS[@]}"; do
             forward=$(echo "$forward" | xargs) # trim whitespace
             SSH_CMD="$SSH_CMD -L $forward"
@@ -202,9 +200,9 @@ runs:
           LOCAL_FORWARDS="${LOCAL_FORWARDS%,}" # remove trailing comma
         fi
         
-        # Handle remote_forwards format
-        if [[ -n "${{ inputs.remote_forwards }}" ]]; then
-          IFS=',' read -ra FORWARDS <<< "${{ inputs.remote_forwards }}"
+        # Handle remote-forwards format
+        if [[ -n "${{ inputs.remote-forwards }}" ]]; then
+          IFS=',' read -ra FORWARDS <<< "${{ inputs.remote-forwards }}"
           for forward in "${FORWARDS[@]}"; do
             forward=$(echo "$forward" | xargs) # trim whitespace
             SSH_CMD="$SSH_CMD -R $forward"
@@ -226,7 +224,7 @@ runs:
         
         # Add connection details
         SSH_CMD="$SSH_CMD $SSH_TARGET"
-        echo 'base_cmd=$SSH_CMD' >> $GITHUB_OUTPUT
+        echo 'base=$SSH_CMD' >> $GITHUB_OUTPUT
         
         # Execute command
         if [[ -n "${{ inputs.command }}" ]]; then
@@ -237,15 +235,19 @@ runs:
         fi
         
         # Output variable
-        echo 'command<<EOF' >> $GITHUB_OUTPUT
+        echo 'ssh<<EOF' >> $GITHUB_OUTPUT
         echo "$SSH_CMD" >> $GITHUB_OUTPUT
         echo 'EOF' >> $GITHUB_OUTPUT
         echo "$SSH_CMD"
+
+    - name: Run SSH command
+      id: ssh
+      if: ${{ inputs.dry-run != 'true' }}
+      shell: bash
+      run: |
+        set -e
         
-        if [[ "${{ inputs.dry-run }}" == "true" ]]; then
-          echo "Skip command execution"
-          exit 0
-        fi
+        SSH_CMD="${{ steps.cmd.outputs.ssh }}"
         
         # Execute SSH command
         echo "Executing SSH command:"
@@ -279,35 +281,34 @@ runs:
         echo "Local forwards: $LOCAL_FORWARDS"
         echo "Remote forwards: $REMOTE_FORWARDS"
         
-        echo "tunnel_pid=$PID" >> $GITHUB_OUTPUT
+        echo "pid=$PID" >> $GITHUB_OUTPUT
 
     - name: Post SSH connection cleanup
       uses: gacts/run-and-post-run@v1
+      if: ${{ inputs.dry-run != 'true' }}
       with:
         post: |
-          if [[ -n "${{ inputs.post_command }}" ]]; then
-            SSH_CMD="${{ steps.setup-tunnel.outputs.base_cmd }} '${{ inputs.post_command }}'"
+          if [[ -n "${{ inputs.post-command }}" ]]; then
+            SSH_CMD="${{ steps.cmd.outputs.base }} '${{ inputs.post-command }}'"
               echo "Executing SSH post command:"
               echo "$SSH_CMD"
               eval "$SSH_CMD"
           fi
 
           # Clean temporary known_hosts file. 
-          KNOWN_HOSTS_FILE="${{ steps.known_hosts.outputs.known_hosts_file }}"
+          KNOWN_HOSTS_FILE="${{ steps.known-hosts.outputs.file }}"
           if [[ -n "$KNOWN_HOSTS_FILE" ]]; then
             rm "$KNOWN_HOSTS_FILE"
           fi
 
           # Close background tunnel.
-          SSH_TUNNEL_PID="${{ steps.setup-tunnel.outputs.tunnel_pid }}"
+          SSH_TUNNEL_PID="${{ steps.ssh.outputs.pid }}"
           if [[ -n "$SSH_TUNNEL_PID" ]]; then
             echo "Cleaning up SSH tunnel (PID: $SSH_TUNNEL_PID)..."
             if [[ "$RUNNER_OS" == "Windows" ]]; then
               taskkill /PID $SSH_TUNNEL_PID /F 2>/dev/null || true
             else
-              kill $SSH_TUNNEL_PID 2>/dev/null || true
-              sleep 2
-              kill -9 $SSH_TUNNEL_PID 2>/dev/null || true
+              kill $SSH_TUNNEL_PID 2>/dev/null || (sleep 2 && kill -9 $SSH_TUNNEL_PID 2>/dev/null) || true
             fi
             echo "SSH tunnel cleanup completed"
           fi
