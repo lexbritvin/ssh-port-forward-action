@@ -282,7 +282,8 @@ runs:
         echo "pid=$PID" >> $GITHUB_OUTPUT
 
     - name: Post SSH connection cleanup
-      uses: gacts/run-and-post-run@v1
+#      uses: gacts/run-and-post-run@v1
+      uses: xeger/post-step-action@main
       if: ${{ inputs.dry-run != 'true' }}
       env:
         SSH_CMD: ${{ steps.cmd.outputs.base }}
@@ -290,7 +291,7 @@ runs:
         KNOWN_HOSTS_FILE: ${{ steps.known-hosts.outputs.file }}
         SSH_TUNNEL_PID: ${{ steps.ssh.outputs.pid }}
       with:
-        post-shell: bash
+#        post-shell: bash
         post: |
           if [[ -n "$POST_CMD" ]]; then
             echo "Executing SSH post command:"
