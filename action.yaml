@@ -54,6 +54,10 @@ inputs:
     description: 'Send keep-alive packets every N seconds (default: 60)'
     required: false
     default: '60'
+  dry-run:
+    description: 'Only show the SSH command that would be executed without running it'
+    required: false
+    default: 'false'
 
 outputs:
   pid:
@@ -230,20 +234,18 @@ runs:
         fi
 
         # Output variable
-        echo 'ssh<<EOF' >> $GITHUB_OUTPUT
-        echo "$SSH_CMD" >> $GITHUB_OUTPUT
-        echo 'EOF' >> $GITHUB_OUTPUT
+        echo 'ssh=$SSH_CMD' >> $GITHUB_OUTPUT
         echo "$SSH_CMD"
 
     - name: Run SSH command
       id: ssh
+      if: ${{ inputs.dry-run != 'true' }}
       shell: bash
       env:
+        SSH_CMD: ${{ steps.cmd.outputs.ssh }}
         COMMAND_INPUT: ${{ inputs.command }}
       run: |
         set -e
-        
-        SSH_CMD="${{ steps.cmd.outputs.ssh }}"
         
         # Execute SSH command
         echo "Executing SSH command:"
@@ -281,6 +283,7 @@ runs:
 
     - name: Post SSH connection cleanup
       uses: gacts/run-and-post-run@v1
+      if: ${{ inputs.dry-run != 'true' }}
       env:
         SSH_CMD: ${{ steps.cmd.outputs.base }}
         POST_CMD: ${{ inputs.post-command }}
@@ -290,7 +293,9 @@ runs:
         post: |
           if [[ -n "$POST_CMD" ]]; then
             echo "Executing SSH post command:"
-            eval "$SSH_CMD" "$POST_CMD"
+            SSH_CMD="$SSH_CMD $(printf '%q' "$POST_CMD")"
+            echo "$SSH_CMD"
+            eval "$SSH_CMD"
           fi
 
           # Clean temporary known_hosts file. 
