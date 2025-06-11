@@ -283,7 +283,7 @@ runs:
 
     - name: Post SSH connection cleanup
 #      uses: gacts/run-and-post-run@v1
-      uses: xeger/post-step-action@main
+      uses: xeger/post-step-action@v1
       if: ${{ inputs.dry-run != 'true' }}
       env:
         SSH_CMD: ${{ steps.cmd.outputs.base }}
