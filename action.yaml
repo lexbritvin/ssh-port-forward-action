@@ -152,6 +152,8 @@ runs:
     - name: Prepare SSH command
       id: cmd
       shell: bash
+      env:
+        SSH_USER_CMD: ${{ inputs.command }}
       run: |
         # Build SSH command
         SSH_CMD="ssh"
@@ -227,8 +229,8 @@ runs:
         echo 'base=$SSH_CMD' >> $GITHUB_OUTPUT
         
         # Execute command
-        if [[ -n "${{ inputs.command }}" ]]; then
-          SSH_CMD="$SSH_CMD '${{ inputs.command }}'"
+        if [[ -n "$SSH_USER_CMD" ]]; then
+          SSH_CMD="$SSH_CMD $SSH_USER_CMD"
         # Add options to run in background and not execute commands
         else
           SSH_CMD="$SSH_CMD -N -f"
@@ -286,24 +288,26 @@ runs:
     - name: Post SSH connection cleanup
       uses: gacts/run-and-post-run@v1
       if: ${{ inputs.dry-run != 'true' }}
+      env:
+        SSH_CMD: ${{ steps.cmd.outputs.base }}
+        POST_CMD: ${{ inputs.post-command }}
+        KNOWN_HOSTS_FILE: ${{ steps.known-hosts.outputs.file }}
+        SSH_TUNNEL_PID: ${{ steps.ssh.outputs.pid }}
       with:
         post: |
-          POST_CMD="${{ inputs.post-command }}"
           if [[ -n "$POST_CMD" ]]; then
-            SSH_CMD="${{ steps.cmd.outputs.base }} '$POST_CMD'"
+            SSH_CMD="$SSH_CMD $POST_CMD"
             echo "Executing SSH post command:"
             echo "$SSH_CMD"
             eval "$SSH_CMD"
           fi
 
           # Clean temporary known_hosts file. 
-          KNOWN_HOSTS_FILE="${{ steps.known-hosts.outputs.file }}"
           if [[ -n "$KNOWN_HOSTS_FILE" ]]; then
             rm "$KNOWN_HOSTS_FILE" || true
           fi
 
           # Close background tunnel.
-          SSH_TUNNEL_PID="${{ steps.ssh.outputs.pid }}"
           if [[ -n "$SSH_TUNNEL_PID" ]]; then
             echo "Cleaning up SSH tunnel (PID: $SSH_TUNNEL_PID)..."
             if [[ "$RUNNER_OS" == "Windows" ]]; then
