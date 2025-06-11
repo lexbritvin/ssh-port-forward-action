@@ -223,7 +223,7 @@ runs:
         
         # Add connection details
         SSH_CMD="$SSH_CMD $SSH_TARGET"
-        echo 'base=$SSH_CMD' >> $GITHUB_OUTPUT
+        echo "base=$SSH_CMD" >> $GITHUB_OUTPUT
 
         if [[ -n "$COMMAND_INPUT" ]]; then
           # Execute command using environment variable
