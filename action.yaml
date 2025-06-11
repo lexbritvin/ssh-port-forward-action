@@ -288,17 +288,18 @@ runs:
       if: ${{ inputs.dry-run != 'true' }}
       with:
         post: |
-          if [[ -n "${{ inputs.post-command }}" ]]; then
-            SSH_CMD="${{ steps.cmd.outputs.base }} '${{ inputs.post-command }}'"
-              echo "Executing SSH post command:"
-              echo "$SSH_CMD"
-              eval "$SSH_CMD"
+          POST_CMD="${{ inputs.post-command }}"
+          if [[ -n "$POST_CMD" ]]; then
+            SSH_CMD="${{ steps.cmd.outputs.base }} '$POST_CMD'"
+            echo "Executing SSH post command:"
+            echo "$SSH_CMD"
+            eval "$SSH_CMD"
           fi
 
           # Clean temporary known_hosts file. 
           KNOWN_HOSTS_FILE="${{ steps.known-hosts.outputs.file }}"
           if [[ -n "$KNOWN_HOSTS_FILE" ]]; then
-            rm "$KNOWN_HOSTS_FILE"
+            rm "$KNOWN_HOSTS_FILE" || true
           fi
 
           # Close background tunnel.
