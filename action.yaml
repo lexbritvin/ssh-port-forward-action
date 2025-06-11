@@ -39,7 +39,11 @@ inputs:
     required: false
     default: ''
   command:
-    description: ''
+    description: 'Command to execute on the remote SSH host (alternative to port forwarding)'
+    required: false
+    default: ''
+  post_command:
+    description: 'Command to execute on the remote host after the workflow completes'
     required: false
     default: ''
   timeout:
@@ -50,17 +54,18 @@ inputs:
     description: 'Send keep-alive packets every N seconds (default: 60)'
     required: false
     default: '60'
+  dry_run:
+    description: 'Only show the SSH command that would be executed without running it'
+    required: false
+    default: 'false'
 
 outputs:
+  command:
+    description: 'The full SSH command that was executed'
+    value: ${{ steps.setup-tunnel.outputs.command }}
   tunnel_pid:
     description: 'Process ID of the SSH tunnel'
     value: ${{ steps.setup-tunnel.outputs.tunnel_pid }}
-  local_forwards:
-    description: 'Active local port forwards'
-    value: ${{ steps.setup-tunnel.outputs.local_forwards }}
-  remote_forwards:
-    description: 'Active remote port forwards'
-    value: ${{ steps.setup-tunnel.outputs.remote_forwards }}
 
 runs:
   using: 'composite'
@@ -160,6 +165,7 @@ runs:
         SSH_CMD="$SSH_CMD -o ConnectTimeout=${{ inputs.timeout }}"
         SSH_CMD="$SSH_CMD -o ServerAliveInterval=${{ inputs.keep_alive }}"
         SSH_CMD="$SSH_CMD -o ServerAliveCountMax=3"
+        SSH_CMD="$SSH_CMD -T"
         
         # Add custom SSH flags
         if [[ -n "${{ inputs.ssh_flags }}" ]]; then
@@ -220,24 +226,30 @@ runs:
         
         # Add connection details
         SSH_CMD="$SSH_CMD $SSH_TARGET"
+        echo 'base_cmd=$SSH_CMD' >> $GITHUB_OUTPUT
         
         # Execute command
         if [[ -n "${{ inputs.command }}" ]]; then
-          SSH_CMD="$SSH_CMD -T '${{ inputs.command }}'"
+          SSH_CMD="$SSH_CMD '${{ inputs.command }}'"
         # Add options to run in background and not execute commands
         else
-          SSH_CMD="$SSH_CMD -T -N -f"
+          SSH_CMD="$SSH_CMD -N -f"
+        fi
+        
+        # Output variable
+        echo 'command<<EOF' >> $GITHUB_OUTPUT
+        echo "$SSH_CMD" >> $GITHUB_OUTPUT
+        echo 'EOF' >> $GITHUB_OUTPUT
+        echo "$SSH_CMD"
+        
+        if [[ "${{ inputs.dry-run }}" == "true" ]]; then
+          echo "Skip command execution"
+          exit 0
         fi
         
         # Execute SSH command
         echo "Executing SSH command:"
-        echo "$SSH_CMD"
         eval "$SSH_CMD"
-        
-        # Clean temporary known_hosts file. 
-        if [[ -n "${{ steps.known_hosts.outputs.known_hosts_file }}" ]]; then
-          rm "${{ steps.known_hosts.outputs.known_hosts_file }}"
-        fi
         
         if [[ -n "${{ inputs.command }}" ]]; then
           echo "Successfully executed command"
@@ -268,33 +280,34 @@ runs:
         echo "Remote forwards: $REMOTE_FORWARDS"
         
         echo "tunnel_pid=$PID" >> $GITHUB_OUTPUT
-        echo "local_forwards=$LOCAL_FORWARDS" >> $GITHUB_OUTPUT
-        echo "remote_forwards=$REMOTE_FORWARDS" >> $GITHUB_OUTPUT
 
-#    - name: Setup cleanup trap
-#      shell: bash
-#      run: |
-#        SSH_TUNNEL_PID="${{ steps.setup-tunnel.outputs.tunnel_pid }}"
-#        # Create cleanup script
-#        cat > ~/.ssh/cleanup_tunnel.sh << 'EOF'
-#        #!/bin/bash
-#        if [[ -n "$SSH_TUNNEL_PID" ]]; then
-#          echo "Cleaning up SSH tunnel (PID: $SSH_TUNNEL_PID)..."
-#          if [[ "$RUNNER_OS" == "Windows" ]]; then
-#            taskkill /PID $SSH_TUNNEL_PID /F 2>/dev/null || true
-#          else
-#            kill $SSH_TUNNEL_PID 2>/dev/null || true
-#            sleep 2
-#            kill -9 $SSH_TUNNEL_PID 2>/dev/null || true
-#          fi
-#          echo "SSH tunnel cleanup completed"
-#        fi
-#
-#        chmod +x ~/.ssh/cleanup_tunnel.sh
-#
-#        # Register cleanup for different shells
-#        if [[ "$RUNNER_OS" == "Windows" ]]; then
-#          echo "trap '~/.ssh/cleanup_tunnel.sh' EXIT" >> ~/.bashrc
-#        else
-#          echo "trap '~/.ssh/cleanup_tunnel.sh' EXIT INT TERM" >> ~/.bashrc
-#        fi
+    - name: Post SSH connection cleanup
+      uses: gacts/run-and-post-run@v1
+      with:
+        post: |
+          if [[ -n "${{ inputs.post_command }}" ]]; then
+            SSH_CMD="${{ steps.setup-tunnel.outputs.base_cmd }} '${{ inputs.post_command }}'"
+              echo "Executing SSH post command:"
+              echo "$SSH_CMD"
+              eval "$SSH_CMD"
+          fi
+
+          # Clean temporary known_hosts file. 
+          KNOWN_HOSTS_FILE="${{ steps.known_hosts.outputs.known_hosts_file }}"
+          if [[ -n "$KNOWN_HOSTS_FILE" ]]; then
+            rm "$KNOWN_HOSTS_FILE"
+          fi
+
+          # Close background tunnel.
+          SSH_TUNNEL_PID="${{ steps.setup-tunnel.outputs.tunnel_pid }}"
+          if [[ -n "$SSH_TUNNEL_PID" ]]; then
+            echo "Cleaning up SSH tunnel (PID: $SSH_TUNNEL_PID)..."
+            if [[ "$RUNNER_OS" == "Windows" ]]; then
+              taskkill /PID $SSH_TUNNEL_PID /F 2>/dev/null || true
+            else
+              kill $SSH_TUNNEL_PID 2>/dev/null || true
+              sleep 2
+              kill -9 $SSH_TUNNEL_PID 2>/dev/null || true
+            fi
+            echo "SSH tunnel cleanup completed"
+          fi
