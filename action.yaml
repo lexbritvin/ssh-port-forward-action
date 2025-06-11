@@ -223,7 +223,7 @@ runs:
 
         if [[ -n "$COMMAND_INPUT" ]]; then
           # Execute command using environment variable
-          SSH_CMD="$SSH_CMD \"\$COMMAND_INPUT\""
+          SSH_CMD="$SSH_CMD $(printf '%q' "$COMMAND_INPUT")"
         else
           # Add options to run in background and not execute commands
           SSH_CMD="$SSH_CMD -N -f"
