@@ -146,7 +146,7 @@ runs:
       id: cmd
       shell: bash
       env:
-        SSH_USER_CMD: ${{ inputs.command }}
+        COMMAND_INPUT: ${{ inputs.command }}
       run: |
         # Build SSH command
         SSH_CMD="ssh"
@@ -220,12 +220,15 @@ runs:
         # Add connection details
         SSH_CMD="$SSH_CMD $SSH_TARGET"
         echo 'base=$SSH_CMD' >> $GITHUB_OUTPUT
-        
-        # Add options to run in background and not execute commands
-        if [[ -z "$SSH_USER_CMD" ]]; then
+
+        if [[ -n "$COMMAND_INPUT" ]]; then
+          # Execute command using environment variable
+          SSH_CMD="$SSH_CMD \"\$COMMAND_INPUT\""
+        else
+          # Add options to run in background and not execute commands
           SSH_CMD="$SSH_CMD -N -f"
         fi
-        
+
         # Output variable
         echo 'ssh<<EOF' >> $GITHUB_OUTPUT
         echo "$SSH_CMD" >> $GITHUB_OUTPUT
@@ -236,7 +239,7 @@ runs:
       id: ssh
       shell: bash
       env:
-        SSH_USER_CMD: ${{ inputs.command }}
+        COMMAND_INPUT: ${{ inputs.command }}
       run: |
         set -e
         
@@ -244,11 +247,9 @@ runs:
         
         # Execute SSH command
         echo "Executing SSH command:"
-        eval "$SSH_CMD" <<'EOF'
-        $SSH_USER_CMD
-        EOF
+        eval "$SSH_CMD"
 
-        if [[ -n "$SSH_USER_CMD" ]]; then
+        if [[ -n "$COMMAND_INPUT" ]]; then
           echo "Successfully executed command"
           exit 0
         fi
@@ -289,9 +290,7 @@ runs:
         post: |
           if [[ -n "$POST_CMD" ]]; then
             echo "Executing SSH post command:"
-            eval "$SSH_CMD"<<'EOF'
-          $POST_CMD
-          EOF    
+            eval "$SSH_CMD" "$POST_CMD"
           fi
 
           # Clean temporary known_hosts file. 
