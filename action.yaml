@@ -66,6 +66,12 @@ outputs:
   pid:
     description: 'Process ID of the background SSH tunnel'
     value: ${{ steps.ssh.outputs.pid }}
+  allocated-host:
+    description: 'Public host for remote forward (when using 0:host:port format)'
+    value: ${{ steps.ssh.outputs.allocated-host }}
+  allocated-port:
+    description: 'Allocated port for remote forward (when using 0:host:port format)'
+    value: ${{ steps.ssh.outputs.allocated-port }}
 
 runs:
   using: 'composite'
@@ -221,15 +227,20 @@ runs:
         fi
         
         # Handle remote-forwards format
+        ALLOCATE_RANDOM=false
         if [[ -n "${{ inputs.remote-forwards }}" ]]; then
           IFS=',' read -ra FORWARDS <<< "${{ inputs.remote-forwards }}"
           for forward in "${FORWARDS[@]}"; do
             forward=$(echo "$forward" | xargs) # trim whitespace
             SSH_CMD="$SSH_CMD -R $forward"
             REMOTE_FORWARDS="$REMOTE_FORWARDS$forward,"
+            if [[ "$forward" =~ ^0: ]]; then
+              ALLOCATE_RANDOM=true
+            fi
           done
           REMOTE_FORWARDS="${REMOTE_FORWARDS%,}" # remove trailing comma
         fi
+        echo "allocate-random=$ALLOCATE_RANDOM" >> $GITHUB_OUTPUT
         
         # Set a different port if requested
         if [[ -n "${{ inputs.port }}" ]]; then
@@ -265,16 +276,66 @@ runs:
       env:
         SSH_CMD: ${{ steps.cmd.outputs.ssh }}
         COMMAND_INPUT: ${{ inputs.command }}
+        ALLOCATE_RANDOM: ${{ steps.cmd.outputs.allocate-random }}
       run: |
         set -e
         
         # Execute SSH command
         echo "Executing SSH command:"
-        eval "$SSH_CMD"
-
         if [[ -n "$COMMAND_INPUT" ]]; then
+          eval "$SSH_CMD"
           echo "Successfully executed command"
           exit 0
+        elif [[ "$ALLOCATE_RANDOM" == "true" ]]; then
+          # For remote forwards with port 0, capture the output to parse allocated ports
+          SSH_OUTPUT=$(mktemp)
+          eval "$SSH_CMD" 2>&1 | tee "$SSH_OUTPUT" &
+          SSH_PID=$!
+        
+          # Wait a moment for SSH to establish connection and output port allocation
+          sleep 3
+        
+          # Parse allocated port from output
+          ALLOCATED_PORT=""
+          ALLOCATED_HOST="${{ inputs.host }}"
+        
+          if [[ -f "$SSH_OUTPUT" ]]; then
+            # Look for "Allocated port X for remote forward"
+            ALLOCATED_PORT=$(grep -o "Allocated port [0-9]\+ for remote forward" "$SSH_OUTPUT" | grep -o "[0-9]\+" | head -1 || true)
+        
+            # Look for tunnel URLs (pinggy format)
+            TUNNEL_URL=$(grep -o "tcp://[^[:space:]]*" "$SSH_OUTPUT" | head -1 || true)
+        
+            # If we found a tunnel URL, extract host and port separately
+            if [[ -n "$TUNNEL_URL" ]]; then
+              # Remove tcp:// prefix
+              HOST_PORT=$(echo "$TUNNEL_URL" | sed 's|^tcp://||')
+        
+              # Extract host (everything before the last colon)
+              ALLOCATED_HOST=$(echo "$HOST_PORT" | sed 's|:[0-9]*$||')
+        
+              # Extract port (everything after the last colon)
+              if [[ -z "$ALLOCATED_PORT" ]]; then
+                ALLOCATED_PORT=$(echo "$HOST_PORT" | grep -o ":[0-9]\+$" | grep -o "[0-9]\+" || true)
+              fi
+            fi
+        
+            # Clean up temp file
+            rm -f "$SSH_OUTPUT"
+          fi
+        
+          if [[ -n "$ALLOCATED_PORT" ]]; then
+            echo "Allocated port: $ALLOCATED_PORT"
+            echo "allocated-port=$ALLOCATED_PORT" >> $GITHUB_OUTPUT
+          fi
+        
+          if [[ -n "$ALLOCATED_HOST" ]]; then
+            echo "Allocated host: $ALLOCATED_HOST"  
+            echo "allocated-host=$ALLOCATED_HOST" >> $GITHUB_OUTPUT
+          fi
+        else
+          # Normal execution without output capture
+          eval "$SSH_CMD"
         fi
         
         # Find the SSH process PID
