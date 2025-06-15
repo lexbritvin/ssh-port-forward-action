@@ -16,6 +16,9 @@ inputs:
   username:
     description: 'SSH username (optional - will use current user or SSH config if not specified)'
     required: false
+  private-key:
+    description: 'SSH private key content'
+    required: false
   private-key-path:
     description: 'Path to SSH private key file'
     required: false
@@ -69,7 +72,14 @@ runs:
   steps:
     - name: Validate inputs
       shell: bash
+      env:
+        SSH_PRIVATE_KEY: ${{ inputs.private-key }}
       run: |
+        if [[ -n "$SSH_PRIVATE_KEY" && -n "${{ inputs.private-key-path }}" ]]; then
+          echo "Error: Cannot specify both private-key and private-key-path"
+          exit 1
+        fi
+
         # Check if we have either port forwarding configuration OR command (but not both)
         if [[ -n "${{ inputs.command }}" ]]; then
           if [[ -n "${{ inputs.local-forwards }}" || -n "${{ inputs.remote-forwards }}" ]]; then
@@ -117,21 +127,32 @@ runs:
 
     - name: Setup SSH directory
       shell: bash
+      id: ssh-config
+      env:
+        SSH_PRIVATE_KEY: ${{ inputs.private-key }}
+        SSH_PRIVATE_KEY_PATH: ${{ inputs.private-key-path }}
+        SSH_KNOWN_HOSTS: ${{ inputs.known-hosts }}
       run: |
         mkdir -p ~/.ssh
         chmod 700 ~/.ssh
 
-    - name: Setup known hosts
-      if: inputs.known-hosts != ''
-      shell: bash
-      id: known-hosts
-      run: |
-        KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts2"
+        RANDOM_ID="$RANDOM"
+        # Set private key.
+        if [[ -n "$SSH_PRIVATE_KEY" ]]; then
+          SSH_PRIVATE_KEY_PATH="~/.ssh/id_tun_$RANDOM_ID"
+          echo "$SSH_PRIVATE_KEY" > $SSH_PRIVATE_KEY_PATH
+          chmod 600 $SSH_PRIVATE_KEY_PATH
+        fi
+        echo "private-key-path=$SSH_PRIVATE_KEY_PATH" >> $GITHUB_OUTPUT
         
-        echo "${{ inputs.known-hosts }}" >> $KNOWN_HOSTS_FILE
-        chmod 600 $KNOWN_HOSTS_FILE
-
-        echo "file=$KNOWN_HOSTS_FILE" >> $GITHUB_OUTPUT
+        if [[ -n "$SSH_KNOWN_HOSTS" ]]; then
+          KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts$RANDOM_ID"
+          
+          echo "$SSH_KNOWN_HOSTS" >> $KNOWN_HOSTS_FILE
+          chmod 600 $KNOWN_HOSTS_FILE
+  
+          echo "known-hosts=$KNOWN_HOSTS_FILE" >> $GITHUB_OUTPUT
+        fi
 
     - name: Install sshpass (for password auth)
       if: inputs.password != '' && runner.os == 'Linux'
@@ -154,8 +175,8 @@ runs:
       run: |
         # Build SSH command
         SSH_CMD="ssh"
-        if [[ -n "${{ steps.known-hosts.outputs.file }}" ]]; then
-          SSH_CMD="$SSH_CMD -o UserKnownHostsFile='${{ steps.known-hosts.outputs.file }}'"
+        if [[ -n "${{ steps.ssh-config.outputs.known-hosts }}" ]]; then
+          SSH_CMD="$SSH_CMD -o UserKnownHostsFile='${{ steps.ssh-config.outputs.known-hosts }}'"
         fi
         
         # Add timeout and keep-alive options
@@ -172,8 +193,8 @@ runs:
         # Add authentication
         if [[ -n "${{ inputs.password }}" ]]; then
           SSH_CMD="sshpass -p '${{ inputs.password }}' $SSH_CMD"
-        elif [[ -n "${{ inputs.private-key-path }}" ]]; then
-          SSH_CMD="$SSH_CMD -i '${{ inputs.private-key-path }}'"
+        elif [[ -n "${{ steps.ssh-config.outputs.private-key-path }}" ]]; then
+          SSH_CMD="$SSH_CMD -i '${{ steps.ssh-config.outputs.private-key-path }}'"
         fi
         
         # Add jump hosts if specified
@@ -282,16 +303,14 @@ runs:
         echo "pid=$PID" >> $GITHUB_OUTPUT
 
     - name: Post SSH connection cleanup
-#      uses: gacts/run-and-post-run@v1
       uses: srz-zumix/post-run-action@v2
       if: ${{ inputs.dry-run != 'true' }}
       env:
         SSH_CMD: ${{ steps.cmd.outputs.base }}
         POST_CMD: ${{ inputs.post-command }}
-        KNOWN_HOSTS_FILE: ${{ steps.known-hosts.outputs.file }}
+        KNOWN_HOSTS_FILE: ${{ steps.ssh-config.outputs.known-hosts }}
         SSH_TUNNEL_PID: ${{ steps.ssh.outputs.pid }}
       with:
-        #post: |
         post-run: |
           if [[ -n "$POST_CMD" ]]; then
             echo "Executing SSH post command:"
